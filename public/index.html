@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KiteSpend Guard</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:20px;background:#0b1220;color:#e5e7eb;font-family:Arial,sans-serif}
+.container{max-width:650px;margin:auto}
+h1{color:#65e6a5;margin-bottom:5px}
+.subtitle{color:#94a3b8;margin-bottom:25px}
+.card{background:#172235;padding:18px;border-radius:12px;margin-bottom:16px}
+.stats{display:flex;justify-content:space-between;gap:10px}
+.stat{flex:1}
+.stat strong{display:block;font-size:23px;margin-top:8px;color:#65e6a5}
+label{display:block;margin:12px 0 6px}
+input{width:100%;padding:12px;border:1px solid #334155;border-radius:7px;background:#0b1220;color:white}
+button{width:100%;padding:13px;margin-top:16px;border:0;border-radius:7px;background:#65e6a5;color:#07130c;font-weight:bold;font-size:16px}
+.result{margin-top:14px;padding:12px;border-radius:7px}
+small{color:#94a3b8}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>KiteSpend Guard 🪁</h1>
+<p class="subtitle">AI agent spending control dashboard</p>
+
+<div class="card">
+<h3>System status</h3>
+<p><b>SERV Reasoning:</b> <span id="servStatus">Not checked yet</span></p>
+<p><b>Kite Agent Passport:</b> <span id="passportStatus">Checking...</span></p><p><b>Agent registration:</b> <span id="agentStatus">Checking...</span></p><p><b>Dedicated session:</b> <span id="sessionStatus">Checking...</span></p><p><b>Session allowance:</b> <span id="sessionAllowance">Checking...</span></p>
+<p><b>Payments:</b> Not connected — no funds transferred.</p>
+</div>
+
+<div class="card stats">
+<div class="stat">Daily budget<strong id="budget">$50</strong></div>
+<div class="stat">Remaining<strong id="remaining">$50</strong></div>
+</div>
+
+<div class="card">
+<h3>Spending limits</h3>
+<form id="policyForm">
+<label>Maximum per purchase (USDC)</label>
+<input id="maxPerPurchase" type="number" min="0.01" step="0.01" required>
+<label>Daily budget (USDC)</label>
+<input id="dailyBudget" type="number" min="0.01" step="0.01" required>
+<button type="submit">Save spending limits</button>
+</form>
+<div id="policyResult"></div>
+</div>
+
+<div class="card">
+<h3>Purchase request</h3>
+<form id="purchaseForm">
+<label>Item</label>
+<input id="item" placeholder="e.g. Laptop accessories" required>
+<label>Supplier</label>
+<input id="supplier" placeholder="e.g. ABC Supplies" required>
+<label>Amount (USDC)</label>
+<input id="amount" type="number" min="0.01" step="0.01" placeholder="10" required>
+<button type="submit">Evaluate purchase</button>
+</form>
+<div id="result"></div>
+</div>
+
+<div class="card">
+<h3>Transaction history</h3>
+<div id="transactions">Loading...</div>
+</div>
+<div class="card">
+<h3>x402 Payment History</h3>
+<p><small>API service payments, separate from supplier purchases.</small></p>
+<div id="payments">Loading...</div>
+</div>
+
+<p><small>KiteSpend Guard prototype. SERV Reasoning is integrated. Kite Passport verification and real payment integration are still in progress. Purchase approval does not transfer funds.</small></p>
+</div>
+
+<script>
+
+async function refreshPassport(){
+ const status = document.getElementById('passportStatus');
+ const agent = document.getElementById('agentStatus');
+ const session = document.getElementById('sessionStatus');
+ const allowance = document.getElementById('sessionAllowance');
+ try {
+  const response = await fetch('/api/passport-status');
+  const p = await response.json();
+  status.textContent = p.connected ? 'Connected' : 'Unavailable';
+  agent.textContent = p.agentRegistered ? 'Registered' : 'Not registered';
+  session.textContent = p.sessionActive ? 'ACTIVE' : p.sessionStatus;
+  allowance.textContent = p.spent !== undefined
+   ? p.spent + ' / ' + p.maxTotal + ' ' + p.currency +
+     ' spent; ' + p.remaining + ' remaining'
+   : 'Not available';
+ } catch(error) {
+  status.textContent = 'Status check failed';
+  agent.textContent = 'Unavailable';
+  session.textContent = 'Unavailable';
+  allowance.textContent = 'Unavailable';
+ }
+}
+
+async function refresh(){
+ const response=await fetch('/api/state');
+ const data=await response.json();
+ document.getElementById('maxPerPurchase').value=data.policy.maxPerPurchase;
+ document.getElementById('dailyBudget').value=data.policy.dailyBudget;
+ document.getElementById('budget').textContent=data.policy.dailyBudget+' USDC';
+ document.getElementById('remaining').textContent=data.remaining+' USDC';
+ const box=document.getElementById('transactions');
+ const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+   '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+ }[ch]));
+
+ box.innerHTML = data.transactions.length ? data.transactions.map(tx => `
+ <details class="card">
+ <summary><b>${esc(tx.item)}</b> — ${esc(tx.amount)} USDC
+ <br><small>${esc(tx.supplier)} | ${esc(tx.status)} | ${esc(tx.paymentStatus)}</small>
+ </summary>
+ <hr>
+ <p><b>Transaction ID:</b> ${esc(tx.id)}</p>
+ <p><b>Date:</b> ${esc(tx.createdAt)}</p>
+ <p><b>Decision:</b> ${esc(tx.status)}</p>
+ <p><b>Policy explanation:</b> ${esc(tx.reason)}</p>
+ <p><b>SERV status:</b> ${esc(tx.servStatus || 'Not recorded')}</p>
+ <p><b>SERV reasoning:</b><br>${esc(tx.servReasoning || 'Not recorded')}</p>
+ <p><b>Payment:</b> ${esc(tx.paymentStatus || 'NOT PAID')}</p>
+ </details>
+ `).join('') : '<small>No purchase requests yet.</small>';
+
+ const paymentBox = document.getElementById('payments');
+ const payments = Array.isArray(data.payments) ? data.payments : [];
+ paymentBox.innerHTML = payments.length ? payments.map(payment =>
+  '<details class="card"><summary><b>' + esc(payment.service) +
+  '</b> — ' + esc(payment.amount) + ' ' + esc(payment.currency) +
+  '<br><small>' + esc(payment.network) + ' | ' + esc(payment.status) +
+  '</small></summary><hr><p><b>Purpose:</b> ' + esc(payment.purpose) +
+  '</p><p><b>Payment type:</b> ' + esc(payment.paymentType) +
+  '</p><p><b>Transaction hash:</b><br><small>' +
+  esc(payment.transactionHash) + '</small></p><p><b>Date:</b> ' +
+  esc(payment.createdAt) + '</p></details>'
+ ).join('') : '<small>No API payments recorded.</small>';
+
+}
+document.getElementById('policyForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const result=document.getElementById('policyResult');
+ result.textContent='Saving...';
+ try{
+  const response=await fetch('/api/policy',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({
+    maxPerPurchase:Number(document.getElementById('maxPerPurchase').value),
+    dailyBudget:Number(document.getElementById('dailyBudget').value)
+   })
+  });
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error);
+  result.textContent=data.message;
+  await refresh();
+refreshPassport();
+ }catch(error){result.textContent=error.message}
+});
+
+document.getElementById('purchaseForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const result=document.getElementById('result');
+ result.textContent='Evaluating...';
+ try{
+  const response=await fetch('/api/evaluate',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({
+    item:document.getElementById('item').value,
+    supplier:document.getElementById('supplier').value,
+    amount:Number(document.getElementById('amount').value)
+   })
+  });
+  const tx=await response.json();
+  if(!response.ok) throw new Error(tx.error);
+  result.className='result';
+  result.style.background=tx.status==='APPROVED'?'#16452f':'#542727';
+  result.innerHTML='<b>'+tx.status+'</b><br>'+tx.reason+
+    '<br><small>SERV: '+(tx.servStatus || 'UNKNOWN')+
+    '<br>Payment: '+(tx.paymentStatus || 'NOT PAID')+
+    '</small><hr><b>SERV reasoning</b><p></p>';
+  result.querySelector('p').textContent=tx.servReasoning || 'No SERV reasoning was returned.';
+  document.getElementById('servStatus').textContent=tx.servStatus || 'Unknown';
+  await refresh();
+ }catch(error){result.textContent=error.message}
+});
+refresh();
+refreshPassport();
+</script>
+</body>
+</html>

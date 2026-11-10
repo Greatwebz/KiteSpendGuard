@@ -1,0 +1,15 @@
+.env
+.kite-passport/
+*.pem
+*.key
+secrets/
+
+# Local transaction and payment records
+data/*.json
+
+# Backup files
+*.bak
+*.backup
+
+# Dependencies
+node_modules/
